@@ -1,0 +1,15 @@
+.agent/
+.agents/
+node_modules/
+.DS_Store
+.env
+.env.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tgz
+dist/
+*.tsbuildinfo
+coverage/
+.nyc_output/
