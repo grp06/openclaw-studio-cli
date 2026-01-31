@@ -4,12 +4,13 @@ Install OpenClaw Studio with a single command:
 
     npx openclaw-studio
 
-This downloads the OpenClaw Studio app into `./openclaw-studio`, installs dependencies, warns if your OpenClaw config is missing, and prints next steps.
+This clones the OpenClaw Studio repo into `./openclaw-studio`, installs dependencies, warns if your OpenClaw config is missing, and prints next steps.
 
 ## Requirements
 
 - Node.js 18+
 - npm
+- git
 
 ## Usage
 

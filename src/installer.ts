@@ -1,34 +1,9 @@
 import fs from "node:fs";
-import fsp from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import crypto from "node:crypto";
-import { pipeline } from "node:stream/promises";
 import { spawn } from "node:child_process";
-import * as tar from "tar";
 
 export const DEFAULT_SOURCE_REPO = "git@github.com:grp06/openclaw-studio.git";
-
-export function parseGitHubOwnerRepo(sourceRepoUrl: string): { owner: string; repo: string } {
-  const trimmed = String(sourceRepoUrl || "").trim();
-  const httpsMatch = trimmed.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/);
-  if (httpsMatch) {
-    return { owner: httpsMatch[1], repo: httpsMatch[2] };
-  }
-
-  const sshMatch = trimmed.match(/^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/);
-  if (sshMatch) {
-    return { owner: sshMatch[1], repo: sshMatch[2] };
-  }
-
-  throw new Error(
-    `Unsupported repo URL "${sourceRepoUrl}". Expected https://github.com/<owner>/<repo>(.git) or git@github.com:<owner>/<repo>(.git).`
-  );
-}
-
-export function getGitHubTarballUrl(owner: string, repo: string): string {
-  return `https://codeload.github.com/${owner}/${repo}/tar.gz/main`;
-}
 
 function resolveSourceRepo(): string {
   return process.env.OPENCLAW_STUDIO_SOURCE_REPO || DEFAULT_SOURCE_REPO;
@@ -40,24 +15,34 @@ export function validateTargetDir(destDir: string): void {
   }
 }
 
-export async function downloadToTempFile(url: string): Promise<string> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to download ${url}: ${response.status} ${response.statusText}`);
-  }
-  if (!response.body) {
-    throw new Error(`Failed to download ${url}: empty response body`);
-  }
-  const tmpPath = path.join(os.tmpdir(), `openclaw-studio-${crypto.randomUUID()}.tar.gz`);
-  await pipeline(response.body as unknown as NodeJS.ReadableStream, fs.createWriteStream(tmpPath));
-  return tmpPath;
-}
+function runGitClone(sourceRepoUrl: string, destDir: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", ["clone", sourceRepoUrl, destDir], {
+      stdio: "inherit"
+    });
 
-async function extractTarball(tarPath: string, destDir: string): Promise<void> {
-  await tar.x({
-    file: tarPath,
-    cwd: destDir,
-    strip: 1
+    child.on("error", (error) => {
+      const errorCode = (error as NodeJS.ErrnoException).code;
+      if (errorCode === "ENOENT") {
+        reject(
+          new Error("git is required to install OpenClaw Studio. Install git and retry.")
+        );
+        return;
+      }
+      reject(new Error(`Failed to start git clone: ${error.message}`));
+    });
+
+    child.on("close", (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      if (signal) {
+        reject(new Error(`git clone exited with signal ${signal}`));
+        return;
+      }
+      reject(new Error(`git clone failed with exit code ${code}`));
+    });
   });
 }
 
@@ -120,23 +105,9 @@ export async function runInstaller(): Promise<void> {
   validateTargetDir(destDir);
 
   const sourceRepoUrl = resolveSourceRepo();
-  const { owner, repo } = parseGitHubOwnerRepo(sourceRepoUrl);
-  const tarballUrl = getGitHubTarballUrl(owner, repo);
 
-  console.log("Downloading OpenClaw Studio...");
-  const tarPath = await downloadToTempFile(tarballUrl);
-
-  await fsp.mkdir(destDir, { recursive: false });
-
-  console.log("Extracting archive...");
-  try {
-    await extractTarball(tarPath, destDir);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to extract archive: ${message}`);
-  }
-
-  await fsp.unlink(tarPath).catch(() => {});
+  console.log("Cloning OpenClaw Studio...");
+  await runGitClone(sourceRepoUrl, destDir);
 
   console.log("Installing dependencies...");
   await runNpmInstall(destDir);
