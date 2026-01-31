@@ -3,6 +3,14 @@
   "version": "0.0.1",
   "private": false,
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/grp06/openclaw-studio-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/grp06/openclaw-studio-cli/issues"
+  },
+  "homepage": "https://github.com/grp06/openclaw-studio-cli#readme",
   "bin": {
     "openclaw-studio": "dist/openclaw-studio.js"
   },
