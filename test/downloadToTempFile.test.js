@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const http = require("node:http");
-const { downloadToTempFile } = require("../dist/installer");
+const { installer } = require("../dist/openclaw-studio");
 
 function startServer(handler) {
   return new Promise((resolve) => {
@@ -26,7 +26,7 @@ test("downloadToTempFile writes response body to a temp file", async (t) => {
 
   t.after(() => new Promise((resolve) => server.close(() => resolve())));
 
-  const filePath = await downloadToTempFile(`${url}/archive.tar.gz`);
+  const filePath = await installer.downloadToTempFile(`${url}/archive.tar.gz`);
   t.after(() => fs.rmSync(filePath, { force: true }));
 
   const stored = fs.readFileSync(filePath);
@@ -42,7 +42,7 @@ test("downloadToTempFile rejects non-ok responses", async (t) => {
   t.after(() => new Promise((resolve) => server.close(() => resolve())));
 
   await assert.rejects(
-    () => downloadToTempFile(`${url}/fail.tar.gz`),
+    () => installer.downloadToTempFile(`${url}/fail.tar.gz`),
     /Failed to download .*: 500/
   );
 });
@@ -56,7 +56,7 @@ test("downloadToTempFile rejects empty response bodies", async (t) => {
   t.after(() => new Promise((resolve) => server.close(() => resolve())));
 
   await assert.rejects(
-    () => downloadToTempFile(`${url}/empty.tar.gz`),
+    () => installer.downloadToTempFile(`${url}/empty.tar.gz`),
     /empty response body/
   );
 });
