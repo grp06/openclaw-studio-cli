@@ -19,7 +19,7 @@ The primary end-user workflow is:
   - It prints help/version.
   - Otherwise it runs the installer workflow (`runInstaller()`) to download/extract/install OpenClaw Studio.
   - It is safe to import for unit tests: it only executes `main()` when run as the program entrypoint (`require.main === module`).
-  - It also exports a few installer helpers that tests exercise directly (for example `parseGitHubOwnerRepo`, `downloadToTempFile`).
+  - It also exports a small installer namespace (`installer`) that tests exercise directly (for example `installer.parseGitHubOwnerRepo`, `installer.downloadToTempFile`).
 
 - `test/` contains Node’s built-in `node:test` tests.
   - Tests run against the compiled JavaScript output in `dist/`.

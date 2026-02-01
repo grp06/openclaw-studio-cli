@@ -44,9 +44,9 @@ function printHelp(): void {
 // Installer implementation
 // ----------------------------
 
-export const DEFAULT_SOURCE_REPO = "git@github.com:grp06/openclaw-studio.git";
+const DEFAULT_SOURCE_REPO = "git@github.com:grp06/openclaw-studio.git";
 
-export function parseGitHubOwnerRepo(sourceRepoUrl: string): { owner: string; repo: string } {
+function parseGitHubOwnerRepo(sourceRepoUrl: string): { owner: string; repo: string } {
   const trimmed = String(sourceRepoUrl || "").trim();
   const httpsMatch = trimmed.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/);
   if (httpsMatch) {
@@ -63,7 +63,7 @@ export function parseGitHubOwnerRepo(sourceRepoUrl: string): { owner: string; re
   );
 }
 
-export function getGitHubTarballUrl(owner: string, repo: string): string {
+function getGitHubTarballUrl(owner: string, repo: string): string {
   return `https://codeload.github.com/${owner}/${repo}/tar.gz/main`;
 }
 
@@ -71,13 +71,13 @@ function resolveSourceRepo(): string {
   return process.env.OPENCLAW_STUDIO_SOURCE_REPO || DEFAULT_SOURCE_REPO;
 }
 
-export function validateTargetDir(destDir: string): void {
+function validateTargetDir(destDir: string): void {
   if (fs.existsSync(destDir)) {
     throw new Error(`Destination directory already exists: ${destDir}`);
   }
 }
 
-export async function downloadToTempFile(url: string): Promise<string> {
+async function downloadToTempFile(url: string): Promise<string> {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to download ${url}: ${response.status} ${response.statusText}`);
@@ -155,7 +155,7 @@ function warnIfMissingConfig(): void {
   }
 }
 
-export async function runInstaller(): Promise<void> {
+async function runInstaller(): Promise<void> {
   const destDir = path.resolve(process.cwd(), "openclaw-studio");
   validateTargetDir(destDir);
 
@@ -189,6 +189,15 @@ export async function runInstaller(): Promise<void> {
   console.log("  npm run dev");
 }
 
+export const installer = {
+  DEFAULT_SOURCE_REPO,
+  parseGitHubOwnerRepo,
+  getGitHubTarballUrl,
+  validateTargetDir,
+  downloadToTempFile,
+  runInstaller
+} as const;
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const parsed = parseArgs(args);
@@ -211,7 +220,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    await runInstaller();
+    await installer.runInstaller();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(message);
