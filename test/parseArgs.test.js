@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseArgs } = require("../dist/cli");
+const { parseArgs } = require("../dist/openclaw-studio");
 
 test("returns help for -h", () => {
   assert.deepStrictEqual(parseArgs(["-h"]), { action: "help" });

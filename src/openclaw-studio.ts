@@ -3,7 +3,28 @@
 import fs from "node:fs";
 import path from "node:path";
 import { runInstaller } from "./installer";
-import { parseArgs } from "./cli";
+
+export type ParsedArgs =
+  | { action: "help" }
+  | { action: "version" }
+  | { action: "run" }
+  | { action: "error"; message: string };
+
+export function parseArgs(args: string[]): ParsedArgs {
+  if (args.includes("-h") || args.includes("--help")) {
+    return { action: "help" };
+  }
+
+  if (args.includes("-v") || args.includes("--version")) {
+    return { action: "version" };
+  }
+
+  if (args.length > 0) {
+    return { action: "error", message: `Unknown argument: ${args.join(" ")}` };
+  }
+
+  return { action: "run" };
+}
 
 const pkgPath = path.resolve(__dirname, "..", "package.json");
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as { version?: string };
@@ -42,4 +63,6 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+if (require.main === module) {
+  void main();
+}
