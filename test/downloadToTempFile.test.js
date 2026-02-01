@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const http = require("node:http");
-const { downloadToTempFile } = require("../dist/installer");
+const { downloadToTempFile } = require("../dist/openclaw-studio");
 
 function startServer(handler) {
   return new Promise((resolve) => {

@@ -14,18 +14,12 @@ The primary end-user workflow is:
 
 ## High-level structure
 
-- `src/openclaw-studio.ts` is the single CLI entrypoint.
+- `src/openclaw-studio.ts` is the single source module for the CLI.
   - It parses CLI arguments (help/version/run/error).
   - It prints help/version.
-  - Otherwise it calls `runInstaller()`.
+  - Otherwise it runs the installer workflow (`runInstaller()`) to download/extract/install OpenClaw Studio.
   - It is safe to import for unit tests: it only executes `main()` when run as the program entrypoint (`require.main === module`).
-
-- `src/installer.ts` contains the installer implementation.
-  - Repo URL parsing and GitHub tarball URL construction.
-  - Downloading the tarball to a temporary file.
-  - Extracting the tarball.
-  - Running `npm install` via `child_process.spawn`.
-  - Locating and warning about missing OpenClaw config.
+  - It also exports a few installer helpers that tests exercise directly (for example `parseGitHubOwnerRepo`, `downloadToTempFile`).
 
 - `test/` contains Node’s built-in `node:test` tests.
   - Tests run against the compiled JavaScript output in `dist/`.
@@ -39,7 +33,7 @@ The primary end-user workflow is:
    - `-v` / `--version` prints version.
    - Unknown args print an error + help and exit with `process.exitCode = 1`.
    - No args runs the installer.
-4. The installer downloads and unpacks the Studio app into `./openclaw-studio`, installs deps, and prints next steps.
+4. The installer workflow downloads and unpacks the Studio app into `./openclaw-studio`, installs deps, and prints next steps.
 
 ## Key design decisions
 

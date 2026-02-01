@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { validateTargetDir } = require("../dist/installer");
+const { validateTargetDir } = require("../dist/openclaw-studio");
 
 test("validation passes when target directory does not exist", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-studio-test-"));

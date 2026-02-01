@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseGitHubOwnerRepo, getGitHubTarballUrl } = require("../dist/installer");
+const { parseGitHubOwnerRepo, getGitHubTarballUrl } = require("../dist/openclaw-studio");
 
 test("supports https://github.com/o/r", () => {
   assert.deepStrictEqual(parseGitHubOwnerRepo("https://github.com/o/r"), {
