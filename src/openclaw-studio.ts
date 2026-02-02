@@ -69,7 +69,7 @@ export const installer = {
   },
 
   resolveSourceRepo(): string {
-    return process.env.OPENCLAW_STUDIO_SOURCE_REPO || this.DEFAULT_SOURCE_REPO;
+    return process.env.OPENCLAW_STUDIO_SOURCE_REPO || installer.DEFAULT_SOURCE_REPO;
   },
 
   validateTargetDir(destDir: string): void {
@@ -141,7 +141,7 @@ export const installer = {
   },
 
   warnIfMissingConfig(): void {
-    const candidates = this.getConfigCandidates();
+    const candidates = installer.getConfigCandidates();
     const found = candidates.find((candidate) => fs.existsSync(candidate));
     if (found) {
       return;
@@ -158,20 +158,20 @@ export const installer = {
 
   async runInstaller(): Promise<void> {
     const destDir = path.resolve(process.cwd(), "openclaw-studio");
-    this.validateTargetDir(destDir);
+    installer.validateTargetDir(destDir);
 
-    const sourceRepoUrl = this.resolveSourceRepo();
-    const { owner, repo } = this.parseGitHubOwnerRepo(sourceRepoUrl);
-    const tarballUrl = this.getGitHubTarballUrl(owner, repo);
+    const sourceRepoUrl = installer.resolveSourceRepo();
+    const { owner, repo } = installer.parseGitHubOwnerRepo(sourceRepoUrl);
+    const tarballUrl = installer.getGitHubTarballUrl(owner, repo);
 
     console.log("Downloading OpenClaw Studio...");
-    const tarPath = await this.downloadToTempFile(tarballUrl);
+    const tarPath = await installer.downloadToTempFile(tarballUrl);
 
     await fsp.mkdir(destDir, { recursive: false });
 
     console.log("Extracting archive...");
     try {
-      await this.extractTarball(tarPath, destDir);
+      await installer.extractTarball(tarPath, destDir);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to extract archive: ${message}`);
@@ -180,9 +180,9 @@ export const installer = {
     await fsp.unlink(tarPath).catch(() => {});
 
     console.log("Installing dependencies...");
-    await this.runNpmInstall(destDir);
+    await installer.runNpmInstall(destDir);
 
-    this.warnIfMissingConfig();
+    installer.warnIfMissingConfig();
 
     console.log("");
     console.log("Next steps:");

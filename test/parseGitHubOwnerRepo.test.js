@@ -3,7 +3,10 @@ const assert = require("node:assert/strict");
 const { installer } = require("../dist/openclaw-studio");
 
 test("supports https://github.com/o/r", () => {
-  assert.deepStrictEqual(installer.parseGitHubOwnerRepo("https://github.com/o/r"), {
+  // Ensure methods work even if called unbound (no reliance on `this`).
+  const { parseGitHubOwnerRepo } = installer;
+
+  assert.deepStrictEqual(parseGitHubOwnerRepo("https://github.com/o/r"), {
     owner: "o",
     repo: "r"
   });
