@@ -23,7 +23,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "tsc",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc",
     "pretest": "npm run build",
     "test": "node --test",
     "prepack": "npm run build"
