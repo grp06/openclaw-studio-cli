@@ -12,11 +12,21 @@ This downloads the OpenClaw Studio app into `./openclaw-studio`, installs depend
 - npm
 - OpenClaw Gateway running (Studio connects to the gateway over WebSocket)
 
+Note: OpenClaw itself recommends Node 22+. The Studio installer can run on Node 18+, but you'll need Node 22+ to run the OpenClaw gateway.
+
 ## Usage
 
     npx openclaw-studio
     cd openclaw-studio
     npm run dev
+
+### Options
+
+- `--gateway-url <ws(s)://...>`: override the gateway URL used for checks and Studio auto-configuration
+- `--gateway-token <token>`: override the token used for Studio auto-configuration
+- `--no-write-settings`: do not write `~/.openclaw/openclaw-studio/settings.json` (or your configured OpenClaw state dir)
+- `--force-settings`: overwrite Studio settings if they already exist
+- `--run`: start Studio (`npm run dev`) after install
 
 ## Troubleshooting
 
@@ -33,4 +43,3 @@ Override the source repo with:
 Build the CLI with:
 
     npm run build
-

@@ -26,5 +26,47 @@ test("returns error for unknown args", () => {
 });
 
 test("returns run when no args", () => {
-  assert.deepStrictEqual(parseArgs([]), { action: "run" });
+  assert.deepStrictEqual(parseArgs([]), {
+    action: "run",
+    options: {
+      runAfterInstall: false,
+      writeStudioSettings: true,
+      forceStudioSettings: false
+    }
+  });
+});
+
+test("parses --run", () => {
+  assert.deepStrictEqual(parseArgs(["--run"]), {
+    action: "run",
+    options: {
+      runAfterInstall: true,
+      writeStudioSettings: true,
+      forceStudioSettings: false
+    }
+  });
+});
+
+test("parses --gateway-url and --gateway-token", () => {
+  assert.deepStrictEqual(parseArgs(["--gateway-url", "ws://example:1", "--gateway-token", "t"]), {
+    action: "run",
+    options: {
+      runAfterInstall: false,
+      writeStudioSettings: true,
+      forceStudioSettings: false,
+      gatewayUrl: "ws://example:1",
+      gatewayToken: "t"
+    }
+  });
+});
+
+test("parses --no-write-settings and --force-settings", () => {
+  assert.deepStrictEqual(parseArgs(["--no-write-settings", "--force-settings"]), {
+    action: "run",
+    options: {
+      runAfterInstall: false,
+      writeStudioSettings: false,
+      forceStudioSettings: true
+    }
+  });
 });
