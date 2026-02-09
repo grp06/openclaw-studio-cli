@@ -70,3 +70,38 @@ test("parses --no-write-settings and --force-settings", () => {
     }
   });
 });
+
+test("parses doctor default (check)", () => {
+  assert.deepStrictEqual(parseArgs(["doctor"]), {
+    action: "doctor",
+    options: {
+      mode: "check",
+      writeStudioSettings: true,
+      forceStudioSettings: false
+    }
+  });
+});
+
+test("parses doctor --fix", () => {
+  assert.deepStrictEqual(parseArgs(["doctor", "--fix"]), {
+    action: "doctor",
+    options: {
+      mode: "fix",
+      writeStudioSettings: true,
+      forceStudioSettings: false
+    }
+  });
+});
+
+test("parses doctor --check + gateway flags", () => {
+  assert.deepStrictEqual(parseArgs(["doctor", "--check", "--gateway-url", "ws://x:1", "--gateway-token=t"]), {
+    action: "doctor",
+    options: {
+      mode: "check",
+      writeStudioSettings: true,
+      forceStudioSettings: false,
+      gatewayUrl: "ws://x:1",
+      gatewayToken: "t"
+    }
+  });
+});

@@ -34,6 +34,16 @@ Skip the npm confirmation prompt:
 
 If no config is found and no gateway is reachable, the installer will optionally prompt you to enter a remote gateway URL/token so Studio is pre-configured.
 
+## Doctor
+
+Troubleshoot gateway/config/settings issues without reinstalling Studio:
+
+    npx -y openclaw-studio doctor --check
+
+Apply safe fixes (writes Studio settings to point at the chosen gateway URL/token):
+
+    npx -y openclaw-studio doctor --fix --force-settings
+
 ## Troubleshooting
 
 - Missing config: run `openclaw onboard` or set `OPENCLAW_CONFIG_PATH` to a valid `openclaw.json`.
