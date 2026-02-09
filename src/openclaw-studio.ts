@@ -9,6 +9,7 @@ import net from "node:net";
 import tls from "node:tls";
 import { pipeline } from "node:stream/promises";
 import { spawn, spawnSync } from "node:child_process";
+import { createInterface } from "node:readline/promises";
 import * as tar from "tar";
 import JSON5 from "json5";
 import { formatCheckLine, term } from "./term";
@@ -175,6 +176,27 @@ function hasCommand(command: string): boolean {
 }
 
 type GatewayReachability = "reachable" | "unreachable" | "unknown";
+
+async function promptYesNo(question: string): Promise<boolean> {
+  if (!process.stdin.isTTY) return false;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await rl.question(question)).trim().toLowerCase();
+    return answer === "y" || answer === "yes";
+  } finally {
+    rl.close();
+  }
+}
+
+async function promptText(question: string): Promise<string> {
+  if (!process.stdin.isTTY) return "";
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return (await rl.question(question)).trim();
+  } finally {
+    rl.close();
+  }
+}
 
 function parseGatewayUrlHint(options: InstallerOptions, fallback: string): string {
   const explicit = options.gatewayUrl?.trim();
@@ -412,7 +434,7 @@ export const installer = {
 
   runNpmInstall(destDir: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const child = spawn("npm", ["install"], {
+      const child = spawn("npm", ["install", "--no-audit", "--no-fund"], {
         cwd: destDir,
         stdio: "inherit"
       });
@@ -535,7 +557,7 @@ export const installer = {
       console.log("");
     }
 
-    const selectedGatewayUrl =
+    let selectedGatewayUrl =
       explicitGatewayUrl ??
       envGatewayUrl ??
       (localReachability === "reachable" ? localGatewayUrl : null) ??
@@ -543,7 +565,7 @@ export const installer = {
       remoteGatewayUrl ??
       localGatewayUrl;
 
-    const selectedReachability =
+    let selectedReachability =
       selectedGatewayUrl === localGatewayUrl
         ? localReachability
         : remoteGatewayUrl && selectedGatewayUrl === remoteGatewayUrl
@@ -645,6 +667,44 @@ export const installer = {
       console.log("");
     }
 
+    if (
+      selectedReachability !== "reachable" &&
+      !explicitGatewayUrlRaw &&
+      !envGatewayUrlRaw &&
+      !remoteGatewayUrl &&
+      process.stdin.isTTY
+    ) {
+      console.log(term.bold("Gateway setup"));
+      console.log(
+        term.dim(
+          "If you're using a remote gateway (EC2, Tailscale, SSH tunnel), you can set it now so Studio is pre-configured."
+        )
+      );
+      const wantsRemote = await promptYesNo("Configure a remote gateway URL now? (y/N) ");
+      if (wantsRemote) {
+        const url = await promptText("Gateway URL (ws:// or wss://): ");
+        const normalized = normalizeWsUrl(url);
+        if (!normalized) {
+          console.log(term.red(`Invalid gateway url "${url}". Expected ws:// or wss://`));
+        } else {
+          selectedGatewayUrl = normalized;
+          selectedReachability = await checkGatewayReachable(selectedGatewayUrl, 1200);
+          const token = await promptText("Gateway token (optional, press enter to skip): ");
+          if (token.trim()) {
+            options.gatewayToken = token.trim();
+          }
+          console.log(
+            formatCheckLine(
+              `Gateway reachable (${selectedGatewayUrl})`,
+              selectedReachability === "reachable" ? "ok" : "warn",
+              selectedReachability === "reachable" ? "port open" : "not reachable right now"
+            )
+          );
+          console.log("");
+        }
+      }
+    }
+
     if (selectedReachability !== "reachable") {
       console.log(
         term.yellow(
@@ -656,6 +716,13 @@ export const installer = {
           `Start a local gateway: openclaw gateway run --bind loopback --port ${port} --verbose`
         )
       );
+      if (!explicitGatewayUrlRaw && !envGatewayUrlRaw) {
+        console.log(
+          term.dim(
+            `Or use: npx openclaw-studio --gateway-url wss://your-host:18789 --gateway-token <token>`
+          )
+        );
+      }
       console.log("");
     }
 
@@ -685,8 +752,6 @@ export const installer = {
 
     console.log("3) Installing dependencies...");
     await installer.runNpmInstall(destDir);
-
-    installer.warnIfMissingConfig();
 
     const tokenFromConfig = resolveGatewayToken(cfg);
     const token = options.gatewayToken?.trim()
