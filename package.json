@@ -1,6 +1,6 @@
 {
   "name": "openclaw-studio",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "private": false,
   "license": "MIT",
   "repository": {
@@ -26,8 +26,11 @@
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc",
     "pretest": "npm run build",
-    "test": "node --test",
-    "prepack": "npm run build"
+    "test": "node --test test/*.test.js",
+    "prepack": "npm run build",
+    "release:patch": "npm test && npm version patch && npm publish --access public",
+    "release:minor": "npm test && npm version minor && npm publish --access public",
+    "release:major": "npm test && npm version major && npm publish --access public"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
@@ -37,3 +40,4 @@
     "tar": "^7.5.7"
   }
 }
+

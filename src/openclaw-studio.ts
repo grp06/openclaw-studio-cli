@@ -5,9 +5,12 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
+import net from "node:net";
+import tls from "node:tls";
 import { pipeline } from "node:stream/promises";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import * as tar from "tar";
+import { formatCheckLine, term } from "./term";
 
 export type ParsedArgs =
   | { action: "help" }
@@ -36,8 +39,84 @@ const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as { version?: string }
 
 function printHelp(): void {
   console.log(
-    "OpenClaw Studio Installer\n\nUsage:\n  openclaw-studio\n\nOptions:\n  -h, --help     Show help\n  -v, --version  Show version"
+    `${term.bold("OpenClaw Studio Installer")}\n\nUsage:\n  openclaw-studio\n\nOptions:\n  -h, --help     Show help\n  -v, --version  Show version`
   );
+}
+
+function requireNode18OrNewer(): void {
+  const [majorRaw] = process.versions.node.split(".");
+  const major = Number(majorRaw);
+  if (!Number.isFinite(major) || major < 18) {
+    throw new Error(
+      `Node.js 18+ is required. Detected node ${process.versions.node}.`
+    );
+  }
+}
+
+function hasCommand(command: string): boolean {
+  const locator = process.platform === "win32" ? "where" : "which";
+  const located = spawnSync(locator, [command], { stdio: "ignore" });
+  if (located.status === 0) return true;
+
+  const fallback = spawnSync(command, ["--version"], { stdio: "ignore" });
+  return fallback.status === 0 && !fallback.error;
+}
+
+type GatewayReachability = "reachable" | "unreachable" | "unknown";
+
+function parseGatewayUrlHint(): string {
+  const hint = process.env.NEXT_PUBLIC_GATEWAY_URL?.trim();
+  return hint ? hint : "ws://127.0.0.1:18789";
+}
+
+function getPortForProtocol(protocol: string, port: string): number | undefined {
+  if (port) {
+    const parsed = Number(port);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  if (protocol === "ws:" || protocol === "http:") return 80;
+  if (protocol === "wss:" || protocol === "https:") return 443;
+  return undefined;
+}
+
+function checkGatewayReachable(
+  gatewayUrl: string,
+  timeoutMs: number
+): Promise<GatewayReachability> {
+  let url: URL;
+  try {
+    url = new URL(gatewayUrl);
+  } catch {
+    return Promise.resolve("unknown");
+  }
+
+  const host = url.hostname;
+  const port = getPortForProtocol(url.protocol, url.port);
+  if (!host || !port) return Promise.resolve("unknown");
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve("unreachable"), timeoutMs);
+
+    const ok = () => {
+      clearTimeout(timer);
+      resolve("reachable");
+    };
+
+    const fail = () => {
+      clearTimeout(timer);
+      resolve("unreachable");
+    };
+
+    const socket =
+      url.protocol === "wss:"
+        ? tls.connect({ host, port, servername: host }, ok)
+        : net.connect({ host, port }, ok);
+
+    socket.on("error", fail);
+    socket.on("timeout", fail);
+    socket.setTimeout(timeoutMs);
+    socket.on("connect", () => socket.end());
+  });
 }
 
 // ----------------------------
@@ -45,11 +124,13 @@ function printHelp(): void {
 // ----------------------------
 
 export const installer = {
-  DEFAULT_SOURCE_REPO: "git@github.com:grp06/openclaw-studio.git",
+  DEFAULT_SOURCE_REPO: "https://github.com/grp06/openclaw-studio.git",
 
   parseGitHubOwnerRepo(sourceRepoUrl: string): { owner: string; repo: string } {
     const trimmed = String(sourceRepoUrl || "").trim();
-    const httpsMatch = trimmed.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/);
+    const httpsMatch = trimmed.match(
+      /^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/
+    );
     if (httpsMatch) {
       return { owner: httpsMatch[1], repo: httpsMatch[2] };
     }
@@ -88,7 +169,10 @@ export const installer = {
     }
 
     const tmpPath = path.join(os.tmpdir(), `openclaw-studio-${crypto.randomUUID()}.tar.gz`);
-    await pipeline(response.body as unknown as NodeJS.ReadableStream, fs.createWriteStream(tmpPath));
+    await pipeline(
+      response.body as unknown as NodeJS.ReadableStream,
+      fs.createWriteStream(tmpPath)
+    );
     return tmpPath;
   },
 
@@ -140,6 +224,11 @@ export const installer = {
     return candidates;
   },
 
+  resolveExistingConfigPath(): string | undefined {
+    const candidates = installer.getConfigCandidates();
+    return candidates.find((candidate) => fs.existsSync(candidate));
+  },
+
   warnIfMissingConfig(): void {
     const candidates = installer.getConfigCandidates();
     const found = candidates.find((candidate) => fs.existsSync(candidate));
@@ -157,19 +246,100 @@ export const installer = {
   },
 
   async runInstaller(): Promise<void> {
+    console.log(term.bold("OpenClaw Studio Installer"));
+    console.log("");
+
+    requireNode18OrNewer();
+
     const destDir = path.resolve(process.cwd(), "openclaw-studio");
     installer.validateTargetDir(destDir);
+
+    const npmOk = hasCommand("npm");
+    const openclawOk = hasCommand("openclaw");
+    const configPath = installer.resolveExistingConfigPath();
+    const gatewayUrlHint = parseGatewayUrlHint();
+    const gatewayReachability = await checkGatewayReachable(gatewayUrlHint, 800);
+
+    console.log(term.bold("Preflight checks"));
+    console.log(formatCheckLine("npm in PATH", npmOk ? "ok" : "fail"));
+    console.log(
+      formatCheckLine(
+        "openclaw in PATH (recommended)",
+        openclawOk ? "ok" : "warn"
+      )
+    );
+    console.log(
+      formatCheckLine(
+        "OpenClaw config (openclaw.json)",
+        configPath ? "ok" : "warn",
+        configPath ? configPath : "not found"
+      )
+    );
+    console.log(
+      formatCheckLine(
+        `Gateway reachable (${gatewayUrlHint})`,
+        gatewayReachability === "reachable" ? "ok" : "warn",
+        gatewayReachability === "reachable"
+          ? "port open"
+          : gatewayReachability === "unknown"
+            ? "unable to check"
+            : "not reachable right now"
+      )
+    );
+    console.log("");
+
+    if (!npmOk) {
+      throw new Error(
+        "npm is required to install OpenClaw Studio. Install Node.js (includes npm) and retry."
+      );
+    }
+
+    if (!openclawOk) {
+      console.log(
+        term.yellow(
+          "Note: OpenClaw Studio needs an OpenClaw Gateway to connect to. If you haven't installed OpenClaw yet, do that before trying to use Studio."
+        )
+      );
+      console.log("");
+    }
+
+    if (!configPath) {
+      console.log(
+        term.yellow(
+          "Note: OpenClaw config not found. Run `openclaw onboard` (recommended) or set OPENCLAW_CONFIG_PATH to a valid openclaw.json."
+        )
+      );
+      console.log(term.dim("Checked:"));
+      for (const candidate of installer.getConfigCandidates()) {
+        console.log(term.dim(`  ${candidate}`));
+      }
+      console.log("");
+    }
+
+    if (gatewayReachability !== "reachable") {
+      console.log(
+        term.yellow(
+          `Note: couldn't reach a gateway at ${gatewayUrlHint}. That's OK during install, but Studio won't show anything until a gateway is running and reachable.`
+        )
+      );
+      console.log("");
+    }
 
     const sourceRepoUrl = installer.resolveSourceRepo();
     const { owner, repo } = installer.parseGitHubOwnerRepo(sourceRepoUrl);
     const tarballUrl = installer.getGitHubTarballUrl(owner, repo);
 
-    console.log("Downloading OpenClaw Studio...");
+    console.log(term.bold("Installing"));
+    console.log(term.cyan(`Source: ${sourceRepoUrl}`));
+    console.log(term.cyan(`Target: ${destDir}`));
+    console.log("");
+
+    console.log("1) Downloading OpenClaw Studio...");
     const tarPath = await installer.downloadToTempFile(tarballUrl);
 
     await fsp.mkdir(destDir, { recursive: false });
 
-    console.log("Extracting archive...");
+    console.log("2) Extracting archive...");
     try {
       await installer.extractTarball(tarPath, destDir);
     } catch (error) {
@@ -179,15 +349,24 @@ export const installer = {
 
     await fsp.unlink(tarPath).catch(() => {});
 
-    console.log("Installing dependencies...");
+    console.log("3) Installing dependencies...");
     await installer.runNpmInstall(destDir);
 
     installer.warnIfMissingConfig();
 
     console.log("");
-    console.log("Next steps:");
-    console.log("  cd openclaw-studio");
-    console.log("  npm run dev");
+    console.log(term.bold("Next steps"));
+    console.log("1) Start your OpenClaw Gateway (must be running and reachable).");
+    console.log(term.dim(`   Gateway URL hint: ${gatewayUrlHint}`));
+    console.log("2) Start Studio:");
+    console.log(term.dim("   cd openclaw-studio"));
+    console.log(term.dim("   npm run dev"));
+    console.log("3) Open http://localhost:3000");
+    console.log(
+      term.dim(
+        "   If you're using a remote gateway or a different URL/token, set it in Studio Settings."
+      )
+    );
   }
 } as const;
 
@@ -206,7 +385,7 @@ async function main(): Promise<void> {
   }
 
   if (parsed.action === "error") {
-    console.error(parsed.message);
+    console.error(term.red(parsed.message));
     printHelp();
     process.exitCode = 1;
     return;
@@ -216,7 +395,7 @@ async function main(): Promise<void> {
     await installer.runInstaller();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(message);
+    console.error(term.red(message));
     process.exitCode = 1;
   }
 }
@@ -224,3 +403,4 @@ async function main(): Promise<void> {
 if (require.main === module) {
   void main();
 }
+
