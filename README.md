@@ -4,7 +4,7 @@ Install OpenClaw Studio with a single command:
 
     npx openclaw-studio
 
-This downloads the OpenClaw Studio app into `./openclaw-studio`, installs dependencies, runs a preflight checklist (Node/npm/OpenClaw config + gateway reachability hint), and prints next steps.
+This downloads the OpenClaw Studio app into `./openclaw-studio`, installs dependencies, runs a preflight checklist (Node/npm/OpenClaw config + gateway reachability hint), writes Studio connection settings when possible, and prints next steps.
 
 ## Requirements
 
@@ -15,6 +15,10 @@ This downloads the OpenClaw Studio app into `./openclaw-studio`, installs depend
 Note: OpenClaw itself recommends Node 22+. The Studio installer can run on Node 18+, but you'll need Node 22+ to run the OpenClaw gateway.
 
 ## Usage
+
+Skip the npm confirmation prompt:
+
+    npx -y openclaw-studio
 
     npx openclaw-studio
     cd openclaw-studio
@@ -27,6 +31,8 @@ Note: OpenClaw itself recommends Node 22+. The Studio installer can run on Node 
 - `--no-write-settings`: do not write `~/.openclaw/openclaw-studio/settings.json` (or your configured OpenClaw state dir)
 - `--force-settings`: overwrite Studio settings if they already exist
 - `--run`: start Studio (`npm run dev`) after install
+
+If no config is found and no gateway is reachable, the installer will optionally prompt you to enter a remote gateway URL/token so Studio is pre-configured.
 
 ## Troubleshooting
 
