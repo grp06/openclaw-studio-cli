@@ -474,7 +474,15 @@ export const installer = {
 
   validateTargetDir(destDir: string): void {
     if (fs.existsSync(destDir)) {
-      throw new Error(`Destination directory already exists: ${destDir}`);
+      const message = [
+        `Install cancelled: "${destDir}" already exists.`,
+        "This command creates a new ./openclaw-studio folder and does not overwrite existing files.",
+        "If this is your existing Studio checkout, start it with:",
+        `  cd "${destDir}"`,
+        "  npm run dev",
+        "If you want a fresh install, run this command from a different directory."
+      ].join("\n");
+      throw new Error(message);
     }
   },
 

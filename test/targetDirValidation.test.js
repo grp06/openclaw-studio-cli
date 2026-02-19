@@ -17,7 +17,7 @@ test("validation fails when target directory exists", () => {
   const target = path.join(root, "openclaw-studio");
   fs.mkdirSync(target, { recursive: true });
   assert.throws(() => installer.validateTargetDir(target), {
-    message: /Destination directory already exists/
+    message: /Install cancelled: ".*" already exists\./
   });
   fs.rmSync(root, { recursive: true, force: true });
 });
