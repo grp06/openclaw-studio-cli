@@ -29,21 +29,15 @@ test("returns run when no args", () => {
   assert.deepStrictEqual(parseArgs([]), {
     action: "run",
     options: {
-      runAfterInstall: false,
-      writeStudioSettings: true,
-      forceStudioSettings: false
+      writeStudioSettings: true
     }
   });
 });
 
-test("parses --run", () => {
+test("returns error for removed --run", () => {
   assert.deepStrictEqual(parseArgs(["--run"]), {
-    action: "run",
-    options: {
-      runAfterInstall: true,
-      writeStudioSettings: true,
-      forceStudioSettings: false
-    }
+    action: "error",
+    message: "Unknown argument: --run"
   });
 });
 
@@ -51,23 +45,26 @@ test("parses --gateway-url and --gateway-token", () => {
   assert.deepStrictEqual(parseArgs(["--gateway-url", "ws://example:1", "--gateway-token", "t"]), {
     action: "run",
     options: {
-      runAfterInstall: false,
       writeStudioSettings: true,
-      forceStudioSettings: false,
       gatewayUrl: "ws://example:1",
       gatewayToken: "t"
     }
   });
 });
 
-test("parses --no-write-settings and --force-settings", () => {
-  assert.deepStrictEqual(parseArgs(["--no-write-settings", "--force-settings"]), {
+test("parses --no-write-settings", () => {
+  assert.deepStrictEqual(parseArgs(["--no-write-settings"]), {
     action: "run",
     options: {
-      runAfterInstall: false,
-      writeStudioSettings: false,
-      forceStudioSettings: true
+      writeStudioSettings: false
     }
+  });
+});
+
+test("returns error for removed --force-settings", () => {
+  assert.deepStrictEqual(parseArgs(["--force-settings"]), {
+    action: "error",
+    message: "Unknown argument: --force-settings"
   });
 });
 
@@ -76,8 +73,7 @@ test("parses doctor default (check)", () => {
     action: "doctor",
     options: {
       mode: "check",
-      writeStudioSettings: true,
-      forceStudioSettings: false
+      writeStudioSettings: true
     }
   });
 });
@@ -87,8 +83,7 @@ test("parses doctor --fix", () => {
     action: "doctor",
     options: {
       mode: "fix",
-      writeStudioSettings: true,
-      forceStudioSettings: false
+      writeStudioSettings: true
     }
   });
 });
@@ -99,7 +94,6 @@ test("parses doctor --check + gateway flags", () => {
     options: {
       mode: "check",
       writeStudioSettings: true,
-      forceStudioSettings: false,
       gatewayUrl: "ws://x:1",
       gatewayToken: "t"
     }

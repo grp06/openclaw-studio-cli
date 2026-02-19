@@ -21,16 +21,12 @@ Skip the npm confirmation prompt:
     npx -y openclaw-studio
 
     npx openclaw-studio
-    cd openclaw-studio
-    npm run dev
 
 ### Options
 
 - `--gateway-url <ws(s)://...>`: override the gateway URL used for checks and Studio auto-configuration
 - `--gateway-token <token>`: override the token used for Studio auto-configuration
 - `--no-write-settings`: do not write `~/.openclaw/openclaw-studio/settings.json` (or your configured OpenClaw state dir)
-- `--force-settings`: overwrite Studio settings if they already exist
-- `--run`: start Studio (`npm run dev`) after install
 
 If no config is found and no gateway is reachable, the installer will optionally prompt you to enter a remote gateway URL/token so Studio is pre-configured.
 
@@ -42,7 +38,7 @@ Troubleshoot gateway/config/settings issues without reinstalling Studio:
 
 Apply safe fixes (writes Studio settings to point at the chosen gateway URL/token):
 
-    npx -y openclaw-studio doctor --fix --force-settings
+    npx -y openclaw-studio doctor --fix
 
 ## Troubleshooting
 

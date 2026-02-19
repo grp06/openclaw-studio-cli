@@ -15,15 +15,16 @@ import JSON5 from "json5";
 import { formatCheckLine, term } from "./term";
 
 export type InstallerOptions = {
-  runAfterInstall: boolean;
   writeStudioSettings: boolean;
-  forceStudioSettings: boolean;
   gatewayUrl?: string;
   gatewayToken?: string;
 };
 
-export type DoctorOptions = Omit<InstallerOptions, "runAfterInstall"> & {
+export type DoctorOptions = {
   mode: "check" | "fix";
+  writeStudioSettings: boolean;
+  gatewayUrl?: string;
+  gatewayToken?: string;
 };
 
 export type ParsedArgs =
@@ -38,15 +39,12 @@ export function parseArgs(args: string[]): ParsedArgs {
   const commandArgs = command === "doctor" ? args.slice(1) : args;
 
   const options: InstallerOptions = {
-    runAfterInstall: false,
     writeStudioSettings: true,
-    forceStudioSettings: false,
   };
 
   const doctor: DoctorOptions = {
     mode: "check",
     writeStudioSettings: true,
-    forceStudioSettings: false,
   };
 
   const expectValue = (flag: string, value: string | undefined) => {
@@ -59,16 +57,10 @@ export function parseArgs(args: string[]): ParsedArgs {
   const applyCommonArg = (
     arg: string,
     next: string | undefined,
-    i: number,
-    target: { writeStudioSettings: boolean; forceStudioSettings: boolean; gatewayUrl?: string; gatewayToken?: string }
+    target: { writeStudioSettings: boolean; gatewayUrl?: string; gatewayToken?: string }
   ): { consumed: number; result?: ParsedArgs } => {
     if (arg === "--no-write-settings") {
       target.writeStudioSettings = false;
-      return { consumed: 1 };
-    }
-
-    if (arg === "--force-settings") {
-      target.forceStudioSettings = true;
       return { consumed: 1 };
     }
 
@@ -112,19 +104,13 @@ export function parseArgs(args: string[]): ParsedArgs {
     if (arg === "-h" || arg === "--help") return { action: "help" };
     if (arg === "-v" || arg === "--version") return { action: "version" };
 
-    if (command === "run" && arg === "--run") {
-      options.runAfterInstall = true;
-      i += 1;
-      continue;
-    }
-
     if (command === "doctor" && (arg === "--check" || arg === "--fix")) {
       doctor.mode = arg === "--fix" ? "fix" : "check";
       i += 1;
       continue;
     }
 
-    const applied = applyCommonArg(arg, next, i, command === "doctor" ? doctor : options);
+    const applied = applyCommonArg(arg, next, command === "doctor" ? doctor : options);
     if (applied.result) return applied.result;
     if (applied.consumed > 0) {
       i += applied.consumed;
@@ -159,8 +145,6 @@ function printHelp(): void {
       "  --gateway-url <ws(s)://>   Gateway WebSocket URL (overrides config)",
       "  --gateway-token <token>    Gateway token (overrides config)",
       "  --no-write-settings        Do not write Studio settings.json",
-      "  --force-settings           Overwrite Studio settings.json if it exists",
-      "  --run                      Start Studio (npm run dev) after install",
       "  --check                    (doctor) Diagnosis only (default)",
       "  --fix                      (doctor) Safe fixes (writes Studio settings)",
     ].join("\n")
@@ -178,19 +162,24 @@ function requireNode18OrNewer(): void {
 }
 
 function warnIfNodeTooOldForOpenClaw(): void {
-  const [majorRaw] = process.versions.node.split(".");
+  const [majorRaw, minorRaw] = process.versions.node.split(".");
   const major = Number(majorRaw);
+  const minor = Number(minorRaw);
+  const shortVersion =
+    Number.isFinite(major) && Number.isFinite(minor)
+      ? `${major}.${minor}`
+      : process.versions.node;
   if (Number.isFinite(major) && major < 22) {
     console.log(
       formatCheckLine(
-        `Node runtime for OpenClaw (recommended >= 22; detected ${process.versions.node})`,
+        `You have Node ${shortVersion} (we recommend >= 22)`,
         "warn"
       )
     );
   } else {
     console.log(
       formatCheckLine(
-        `Node runtime for OpenClaw (recommended >= 22; detected ${process.versions.node})`,
+        `You have Node ${shortVersion} (we recommend >= 22)`,
         "ok"
       )
     );
@@ -361,7 +350,7 @@ function resolveStudioSettingsPath(stateDir: string): string {
 }
 
 async function maybeWriteStudioSettings(params: {
-  options: Pick<InstallerOptions, "writeStudioSettings" | "forceStudioSettings">;
+  options: Pick<InstallerOptions, "writeStudioSettings">;
   stateDir: string;
   gatewayUrl: string;
   token: string;
@@ -372,7 +361,7 @@ async function maybeWriteStudioSettings(params: {
   }
 
   const exists = fs.existsSync(settingsPath);
-  if (exists && !params.options.forceStudioSettings) {
+  if (exists) {
     return { wrote: false, path: settingsPath, skippedBecauseExists: true };
   }
 
@@ -662,18 +651,20 @@ export const installer = {
 
     console.log(term.bold("Preflight checks"));
     warnIfNodeTooOldForOpenClaw();
-    console.log(formatCheckLine("npm in PATH", npmOk ? "ok" : "fail"));
+    console.log(
+      formatCheckLine("npm is available in your PATH", npmOk ? "ok" : "fail")
+    );
     console.log(
       formatCheckLine(
-        "openclaw in PATH (recommended)",
+        "openclaw CLI is available in your PATH (recommended)",
         openclawOk ? "ok" : "warn"
       )
     );
     console.log(
       formatCheckLine(
-        "OpenClaw config",
+        configPath ? "Found your OpenClaw config" : "No OpenClaw config found",
         configPath ? "ok" : "warn",
-        configPath ? configPath : "not found"
+        configPath ? configPath : "run `openclaw onboard` to create one"
       )
     );
     if (configLoadError) {
@@ -681,10 +672,10 @@ export const installer = {
     }
     console.log(
       formatCheckLine(
-        `Local gateway reachable (${localGatewayUrl})`,
+        `Local gateway at ${localGatewayUrl} is reachable`,
         localReachability === "reachable" ? "ok" : "warn",
         localReachability === "reachable"
-          ? "port open"
+          ? "connection successful"
           : localReachability === "unknown"
             ? "unable to check"
             : "not reachable right now"
@@ -693,10 +684,10 @@ export const installer = {
     if (remoteGatewayUrl && remoteReachability) {
       console.log(
         formatCheckLine(
-          `Remote gateway reachable (${remoteGatewayUrl})`,
+          `Remote gateway at ${remoteGatewayUrl} is reachable`,
           remoteReachability === "reachable" ? "ok" : "warn",
           remoteReachability === "reachable"
-            ? "port open"
+            ? "connection successful"
             : remoteReachability === "unknown"
               ? "unable to check"
               : "not reachable right now"
@@ -706,10 +697,10 @@ export const installer = {
     if (selectedGatewayUrl !== localGatewayUrl && selectedGatewayUrl !== remoteGatewayUrl) {
       console.log(
         formatCheckLine(
-          `Gateway reachable (${selectedGatewayUrl})`,
+          `Gateway at ${selectedGatewayUrl} is reachable`,
           selectedReachability === "reachable" ? "ok" : "warn",
           selectedReachability === "reachable"
-            ? "port open"
+            ? "connection successful"
             : selectedReachability === "unknown"
               ? "unable to check"
               : "not reachable right now"
@@ -718,9 +709,9 @@ export const installer = {
     }
     console.log(
       formatCheckLine(
-        `Gateway target (${selectedGatewayUrl})`,
+        `Studio will target ${selectedGatewayUrl}`,
         selectedReachability === "reachable" ? "ok" : "warn",
-        selectedReachability === "reachable" ? "ready" : "not reachable"
+        selectedReachability === "reachable" ? "reachable now" : "not reachable right now"
       )
     );
     console.log("");
@@ -734,11 +725,11 @@ export const installer = {
     if (!openclawOk) {
       console.log(
         term.yellow(
-          "Note: OpenClaw Studio needs an OpenClaw Gateway to connect to. If you haven't installed OpenClaw yet, do that before trying to use Studio."
+          "OpenClaw CLI is not installed (or not in PATH), so there is no local gateway to connect Studio to yet."
         )
       );
-      console.log(term.dim("Install OpenClaw: npm install -g openclaw@latest"));
-      console.log(term.dim("Onboard (creates config + installs daemon): openclaw onboard --install-daemon"));
+      console.log(term.dim("Install OpenClaw CLI: npm install -g openclaw@latest"));
+      console.log(term.dim("Set it up with `openclaw onboard --install-daemon`"));
       console.log("");
     }
 
@@ -858,35 +849,31 @@ export const installer = {
       token,
     });
 
-    console.log("");
-    console.log(term.bold("Next steps"));
-    console.log("1) Start your OpenClaw Gateway (must be running and reachable).");
-    console.log(term.dim(`   Local: openclaw gateway run --bind loopback --port ${port} --verbose`));
-    if (remoteGatewayUrl) {
-      const transport = coerceString(cfg?.gateway?.remote?.transport);
-      const sshTarget = coerceString(cfg?.gateway?.remote?.sshTarget);
-      if (transport === "ssh" && sshTarget) {
-        console.log(
-          term.dim(
-            `   Remote (ssh tunnel): ssh -L ${port}:127.0.0.1:${port} ${sshTarget}`
-          )
-        );
-        console.log(term.dim(`   Then use: ${localGatewayUrl}`));
+    if (selectedReachability !== "reachable") {
+      console.log("");
+      console.log(term.bold("Gateway required"));
+      console.log(
+        term.yellow("You need to start your gateway to run OpenClaw Studio.")
+      );
+      console.log(term.dim(`Local: openclaw gateway run --bind loopback --port ${port} --verbose`));
+      if (remoteGatewayUrl) {
+        const transport = coerceString(cfg?.gateway?.remote?.transport);
+        const sshTarget = coerceString(cfg?.gateway?.remote?.sshTarget);
+        if (transport === "ssh" && sshTarget) {
+          console.log(
+            term.dim(
+              `Remote (ssh tunnel): ssh -L ${port}:127.0.0.1:${port} ${sshTarget}`
+            )
+          );
+          console.log(term.dim(`Then use: ${localGatewayUrl}`));
+        }
       }
+      console.log("");
     }
-    console.log("");
-    console.log("2) Start Studio:");
-    console.log(term.dim("   cd openclaw-studio"));
-    console.log(term.dim("   npm run dev"));
-    console.log("");
-    console.log("3) Open http://localhost:3000");
-    console.log(
-      term.dim(
-        `   Gateway URL: ${selectedGatewayUrl}`
-      )
-    );
+
+    console.log(term.dim(`Gateway URL: ${selectedGatewayUrl}`));
     if (token) {
-      console.log(term.dim(`   Token: configured (${options.gatewayToken?.trim() ? "installer flag" : tokenFromConfig.source})`));
+      console.log(term.dim(`Token: configured (${options.gatewayToken?.trim() ? "installer flag" : tokenFromConfig.source})`));
     } else if (authMode === "password" || hasPassword) {
       console.log(
         term.yellow(
@@ -901,40 +888,37 @@ export const installer = {
       );
     }
     if (settingsWrite.wrote) {
-      console.log(term.dim(`   Studio settings written: ${settingsWrite.path}`));
+      console.log(term.dim(`Studio settings written: ${settingsWrite.path}`));
     } else if (settingsWrite.skippedBecauseExists) {
-      console.log(term.dim(`   Studio settings exists (not overwritten): ${settingsWrite.path}`));
-      console.log(term.dim("   Use --force-settings to overwrite."));
+      console.log(term.dim(`Studio settings exists (not overwritten): ${settingsWrite.path}`));
     }
 
-    if (options.runAfterInstall) {
-      console.log("");
-      console.log(term.bold("Starting Studio"));
-      const child = spawn("npm", ["run", "dev"], {
-        cwd: destDir,
-        stdio: "inherit",
-        env: {
-          ...process.env,
-          NEXT_PUBLIC_GATEWAY_URL: selectedGatewayUrl,
-        },
+    console.log("");
+    console.log(term.bold("Starting Studio"));
+    const child = spawn("npm", ["run", "dev"], {
+      cwd: destDir,
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        NEXT_PUBLIC_GATEWAY_URL: selectedGatewayUrl,
+      },
+    });
+    await new Promise<void>((resolve, reject) => {
+      child.on("error", (error) => {
+        reject(new Error(`Failed to start npm run dev: ${error.message}`));
       });
-      await new Promise<void>((resolve, reject) => {
-        child.on("error", (error) => {
-          reject(new Error(`Failed to start npm run dev: ${error.message}`));
-        });
-        child.on("close", (code, signal) => {
-          if (code === 0) {
-            resolve();
-            return;
-          }
-          if (signal) {
-            reject(new Error(`npm run dev exited with signal ${signal}`));
-            return;
-          }
-          reject(new Error(`npm run dev failed with exit code ${code}`));
-        });
+      child.on("close", (code, signal) => {
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        if (signal) {
+          reject(new Error(`npm run dev exited with signal ${signal}`));
+          return;
+        }
+        reject(new Error(`npm run dev failed with exit code ${code}`));
       });
-    }
+    });
   }
 } as const;
 
@@ -1005,12 +989,17 @@ async function runDoctor(options: DoctorOptions): Promise<void> {
 
   console.log(term.bold("Checks"));
   warnIfNodeTooOldForOpenClaw();
-  console.log(formatCheckLine("openclaw in PATH (recommended)", openclawOk ? "ok" : "warn"));
   console.log(
     formatCheckLine(
-      "OpenClaw config",
+      "openclaw CLI is available in your PATH (recommended)",
+      openclawOk ? "ok" : "warn"
+    )
+  );
+  console.log(
+    formatCheckLine(
+      configPath ? "Found your OpenClaw config" : "No OpenClaw config found",
       configPath ? "ok" : "warn",
-      configPath ? configPath : "not found"
+      configPath ? configPath : "run `openclaw onboard` to create one"
     )
   );
   if (configLoadError) {
@@ -1027,10 +1016,10 @@ async function runDoctor(options: DoctorOptions): Promise<void> {
   );
   console.log(
     formatCheckLine(
-      `Local gateway reachable (${localGatewayUrl})`,
+      `Local gateway at ${localGatewayUrl} is reachable`,
       localReachability === "reachable" ? "ok" : "warn",
       localReachability === "reachable"
-        ? "port open"
+        ? "connection successful"
         : localReachability === "unknown"
           ? "unable to check"
           : "not reachable right now"
@@ -1039,10 +1028,10 @@ async function runDoctor(options: DoctorOptions): Promise<void> {
   if (remoteGatewayUrl && remoteReachability) {
     console.log(
       formatCheckLine(
-        `Remote gateway reachable (${remoteGatewayUrl})`,
+        `Remote gateway at ${remoteGatewayUrl} is reachable`,
         remoteReachability === "reachable" ? "ok" : "warn",
         remoteReachability === "reachable"
-          ? "port open"
+          ? "connection successful"
           : remoteReachability === "unknown"
             ? "unable to check"
             : "not reachable right now"
@@ -1051,9 +1040,9 @@ async function runDoctor(options: DoctorOptions): Promise<void> {
   }
   console.log(
     formatCheckLine(
-      `Gateway target (${selectedGatewayUrl})`,
+      `Studio will target ${selectedGatewayUrl}`,
       selectedReachability === "reachable" ? "ok" : "warn",
-      selectedReachability === "reachable" ? "ready" : "not reachable"
+      selectedReachability === "reachable" ? "reachable now" : "not reachable right now"
     )
   );
   console.log(
@@ -1112,7 +1101,7 @@ async function runDoctor(options: DoctorOptions): Promise<void> {
     console.log(term.yellow("Studio settings gateway URL does not match the selected gateway target."));
     console.log(term.dim(`Settings: ${settingsSummary.url}`));
     console.log(term.dim(`Target:   ${selectedGatewayUrl}`));
-    console.log(term.dim("Fix: openclaw-studio doctor --fix --force-settings"));
+    console.log(term.dim("Fix: openclaw-studio doctor --fix"));
     console.log("");
   }
 
@@ -1127,7 +1116,6 @@ async function runDoctor(options: DoctorOptions): Promise<void> {
       console.log(term.green(`Wrote Studio settings: ${result.path}`));
     } else if (result.skippedBecauseExists) {
       console.log(term.yellow(`Studio settings exists (not overwritten): ${result.path}`));
-      console.log(term.dim("Use --force-settings to overwrite."));
     } else {
       console.log(term.yellow("Did not write Studio settings (disabled by --no-write-settings)."));
     }
