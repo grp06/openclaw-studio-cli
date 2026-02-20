@@ -6,6 +6,8 @@ Install OpenClaw Studio with a single command:
 
 This downloads the OpenClaw Studio app into `./openclaw-studio`, installs dependencies, runs a preflight checklist (Node/npm/OpenClaw config + gateway reachability hint), writes Studio connection settings when possible, and prints next steps.
 
+The CLI also checks npm for newer `openclaw-studio` versions (cached for 12 hours). If your local CLI is stale, it automatically re-runs using `openclaw-studio@latest` before continuing.
+
 ## Requirements
 
 - Node.js 18+

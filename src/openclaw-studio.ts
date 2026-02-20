@@ -129,6 +129,208 @@ export function parseArgs(args: string[]): ParsedArgs {
 
 const pkgPath = path.resolve(__dirname, "..", "package.json");
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as { version?: string };
+const UPDATE_CHECK_CACHE_TTL_MS = 1000 * 60 * 60 * 12;
+const UPDATE_CHECK_TIMEOUT_MS = 2500;
+const UPDATE_CHECK_PACKAGE_NAME = "openclaw-studio";
+
+type UpdateCheckCache = {
+  latestVersion: string;
+  checkedAt: string;
+};
+
+type ParsedSemver = {
+  major: number;
+  minor: number;
+  patch: number;
+  prerelease: string[];
+};
+
+function parseSemver(value: string): ParsedSemver | null {
+  const normalized = value.trim();
+  const match = normalized.match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+.*)?$/);
+  if (!match) return null;
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+  if (!Number.isFinite(major) || !Number.isFinite(minor) || !Number.isFinite(patch)) {
+    return null;
+  }
+
+  return {
+    major,
+    minor,
+    patch,
+    prerelease: match[4] ? match[4].split(".").filter((part) => part.length > 0) : [],
+  };
+}
+
+function comparePrereleaseSegment(a: string, b: string): number {
+  const aIsNumeric = /^\d+$/.test(a);
+  const bIsNumeric = /^\d+$/.test(b);
+  if (aIsNumeric && bIsNumeric) {
+    const aNum = Number(a);
+    const bNum = Number(b);
+    if (aNum !== bNum) return aNum > bNum ? 1 : -1;
+    return 0;
+  }
+  if (aIsNumeric && !bIsNumeric) return -1;
+  if (!aIsNumeric && bIsNumeric) return 1;
+  if (a === b) return 0;
+  return a > b ? 1 : -1;
+}
+
+function comparePrerelease(a: string[], b: string[]): number {
+  if (a.length === 0 && b.length === 0) return 0;
+  if (a.length === 0) return 1;
+  if (b.length === 0) return -1;
+
+  const maxLen = Math.max(a.length, b.length);
+  for (let i = 0; i < maxLen; i += 1) {
+    const aSeg = a[i];
+    const bSeg = b[i];
+    if (aSeg === undefined) return -1;
+    if (bSeg === undefined) return 1;
+    const segCmp = comparePrereleaseSegment(aSeg, bSeg);
+    if (segCmp !== 0) return segCmp;
+  }
+  return 0;
+}
+
+export function compareSemverVersions(currentVersion: string, latestVersion: string): number | null {
+  const current = parseSemver(currentVersion);
+  const latest = parseSemver(latestVersion);
+  if (!current || !latest) return null;
+
+  if (current.major !== latest.major) return current.major > latest.major ? 1 : -1;
+  if (current.minor !== latest.minor) return current.minor > latest.minor ? 1 : -1;
+  if (current.patch !== latest.patch) return current.patch > latest.patch ? 1 : -1;
+
+  return comparePrerelease(current.prerelease, latest.prerelease);
+}
+
+function resolveUpdateCheckCachePath(): string {
+  const overrideStateDir = process.env.OPENCLAW_STATE_DIR?.trim();
+  const stateDir = overrideStateDir ? resolveUserPath(overrideStateDir) : path.join(os.homedir(), ".openclaw");
+  return path.join(stateDir, "openclaw-studio-cli", "update-check.json");
+}
+
+async function readUpdateCheckCache(cachePath: string): Promise<UpdateCheckCache | null> {
+  if (!fs.existsSync(cachePath)) return null;
+  try {
+    const raw = await fsp.readFile(cachePath, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return null;
+    const latestVersion = coerceString((parsed as Record<string, unknown>).latestVersion);
+    const checkedAt = coerceString((parsed as Record<string, unknown>).checkedAt);
+    if (!latestVersion || !checkedAt) return null;
+    const checkedAtMs = Date.parse(checkedAt);
+    if (!Number.isFinite(checkedAtMs)) return null;
+    if (Date.now() - checkedAtMs > UPDATE_CHECK_CACHE_TTL_MS) return null;
+    return { latestVersion, checkedAt };
+  } catch {
+    return null;
+  }
+}
+
+async function writeUpdateCheckCache(cachePath: string, latestVersion: string): Promise<void> {
+  const payload: UpdateCheckCache = {
+    latestVersion,
+    checkedAt: new Date().toISOString(),
+  };
+  try {
+    await fsp.mkdir(path.dirname(cachePath), { recursive: true });
+    await fsp.writeFile(cachePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  } catch {
+    return;
+  }
+}
+
+async function fetchLatestPackageVersion(packageName: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
+  try {
+    const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`, {
+      signal: controller.signal,
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as unknown;
+    if (!payload || typeof payload !== "object") return null;
+    const version = coerceString((payload as Record<string, unknown>).version);
+    return version || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function getLatestCliVersion(): Promise<string | null> {
+  const cachePath = resolveUpdateCheckCachePath();
+  const cached = await readUpdateCheckCache(cachePath);
+  if (cached) return cached.latestVersion;
+
+  const latest = await fetchLatestPackageVersion(UPDATE_CHECK_PACKAGE_NAME);
+  if (!latest) return null;
+  await writeUpdateCheckCache(cachePath, latest);
+  return latest;
+}
+
+function runLatestCli(args: string[]): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("npx", ["-y", `${UPDATE_CHECK_PACKAGE_NAME}@latest`, ...args], {
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        OPENCLAW_STUDIO_AUTO_UPDATE_ACTIVE: "1",
+      },
+    });
+    child.on("error", (error) => {
+      reject(new Error(`Failed to launch npx for auto update: ${error.message}`));
+    });
+    child.on("close", (code, signal) => {
+      resolve({ code, signal });
+    });
+  });
+}
+
+async function maybeHandleCliUpdate(args: string[]): Promise<boolean> {
+  const currentVersion = pkg.version?.trim() || "0.0.0";
+  const latestVersion = await getLatestCliVersion();
+  if (!latestVersion) return false;
+
+  const comparison = compareSemverVersions(currentVersion, latestVersion);
+  if (comparison === null || comparison >= 0) return false;
+
+  console.log(
+    term.yellow(
+      `A newer openclaw-studio version is available (${currentVersion} -> ${latestVersion}).`
+    )
+  );
+  const alreadyReexecuted = process.env.OPENCLAW_STUDIO_AUTO_UPDATE_ACTIVE === "1";
+  if (alreadyReexecuted) return false;
+
+  console.log(term.cyan("Re-running with openclaw-studio@latest..."));
+  try {
+    const result = await runLatestCli(args);
+    if (result.signal) {
+      console.error(term.red(`Auto-updated process exited with signal ${result.signal}`));
+      process.exitCode = 1;
+    } else if (typeof result.code === "number") {
+      process.exitCode = result.code;
+    } else {
+      process.exitCode = 1;
+    }
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(term.yellow(`Auto-update failed: ${message}`));
+    console.log(term.yellow("Continuing with the current version."));
+    console.log("");
+    return false;
+  }
+}
 
 function printHelp(): void {
   console.log(
@@ -1157,6 +1359,11 @@ async function main(): Promise<void> {
   }
 
   try {
+    if (parsed.action === "doctor" || parsed.action === "run") {
+      const handedOffToLatest = await maybeHandleCliUpdate(args);
+      if (handedOffToLatest) return;
+    }
+
     if (parsed.action === "doctor") {
       await runDoctor(parsed.options);
       return;
